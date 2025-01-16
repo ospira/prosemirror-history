@@ -26,7 +26,7 @@ class Branch {
 
   // Pop the latest event off the branch's history and apply it
   // to a document transform.
-  popEvent(state: EditorState, preserveItems: boolean) {
+  popEvent(state: EditorState, preserveItems: boolean) : {remaining: Branch | undefined, transaction: Transaction, selection: SelectionBookmark | undefined} | null {
     if (this.eventCount == 0) return null
 
     let end = this.items.length
@@ -40,7 +40,7 @@ class Branch {
       remap = this.remapping(end, this.items.length)
       mapFrom = remap.maps.length
     }
-    let transform = state.tr
+    let tr = state.tr
     let selection: SelectionBookmark | undefined, remaining: Branch | undefined
     let addAfter: Item[] = [], addBefore: Item[] = []
 
@@ -59,14 +59,14 @@ class Branch {
         addBefore.push(new Item(item.map))
         let step = item.step.map(remap.slice(mapFrom)), map
 
-        if (step && transform.maybeStep(step).doc) {
-          map = transform.mapping.maps[transform.mapping.maps.length - 1]
+        if (step && tr.maybeStep(step).doc) {
+          map = tr.mapping.maps[tr.mapping.maps.length - 1]
           addAfter.push(new Item(map, undefined, undefined, addAfter.length + addBefore.length))
         }
         mapFrom!--
         if (map) remap.appendMap(map, mapFrom)
       } else {
-        transform.maybeStep(item.step)
+        tr.maybeStep(item.step)
       }
 
       if (item.selection) {
@@ -76,12 +76,12 @@ class Branch {
       }
     }, this.items.length, 0)
 
-    return {remaining: remaining!, transform, selection: selection!}
+    return {remaining: remaining!, transaction: tr, selection: selection!}
   }
 
   // Create a new branch with the given transform added.
   addTransform(transform: Transform, selection: SelectionBookmark | undefined,
-               histOptions: Required<HistoryOptions>, preserveItems: boolean) {
+               histOptions: Required<HistoryOptions>, preserveItems: boolean): Branch {
     let newItems = [], eventCount = this.eventCount
     let oldItems = this.items, lastItem = !preserveItems && oldItems.length ? oldItems.get(oldItems.length - 1) : null
 
@@ -118,7 +118,7 @@ class Branch {
     return maps
   }
 
-  addMaps(array: readonly StepMap[]) {
+  addMaps(array: readonly StepMap[]): Branch {
     if (this.eventCount == 0) return this
     return new Branch(this.items.append(array.map(map => new Item(map))), this.eventCount)
   }
@@ -127,7 +127,7 @@ class Branch {
   // to know about those, so that it can adjust the steps that were
   // rebased on top of the remote changes, and include the position
   // maps for the remote changes in its array of items.
-  rebased(rebasedTransform: Transform, rebasedCount: number) {
+  rebased(rebasedTransform: Transform, rebasedCount: number): this | Branch {
     if (!this.eventCount) return this
 
     let rebasedItems: Item[] = [], start = Math.max(0, this.items.length - rebasedCount)
@@ -176,7 +176,7 @@ class Branch {
   // to ensure that only the items below a given level are compressed,
   // because `rebased` relies on a clean, untouched set of items in
   // order to associate old items with rebased steps.
-  compress(upto = this.items.length) {
+  compress(upto = this.items.length): Branch {
     let remap = this.remapping(0, upto), mapFrom = remap.maps.length
     let items: Item[] = [], events = 0
     this.items.forEach((item, i) => {
@@ -206,7 +206,7 @@ class Branch {
   static empty = new Branch(RopeSequence.empty, 0)
 }
 
-function cutOffEvents(items: RopeSequence<Item>, n: number) {
+function cutOffEvents(items: RopeSequence<Item>, n: number): RopeSequence<Item> {
   let cutPoint: number | undefined
   items.forEach((item, i) => {
     if (item.selection && (n-- == 0)) {
@@ -232,7 +232,7 @@ class Item {
     readonly mirrorOffset?: number
   ) {}
 
-  merge(other: Item) {
+  merge(other: Item): Item | void {
     if (this.step && other.step && !other.selection) {
       let step = other.step.merge(this.step)
       if (step) return new Item(step.getMap().invert(), step, this.selection)
@@ -256,7 +256,7 @@ class HistoryState {
 const DEPTH_OVERFLOW = 20
 
 // Record a transformation in undo history.
-function applyTransaction(history: HistoryState, state: EditorState, tr: Transaction, options: Required<HistoryOptions>) {
+function applyTransaction(history: HistoryState, state: EditorState, tr: Transaction, options: Required<HistoryOptions>): HistoryState {
   let historyTr = tr.getMeta(historyKey), rebased
   if (historyTr) return historyTr.historyState
 
@@ -297,7 +297,7 @@ function applyTransaction(history: HistoryState, state: EditorState, tr: Transac
   }
 }
 
-function isAdjacentTo(transform: Transform, prevRanges: readonly number[]) {
+function isAdjacentTo(transform: Transform, prevRanges: readonly number[]): boolean {
   if (!prevRanges) return false
   if (!transform.docChanged) return true
   let adjacent = false
@@ -309,14 +309,14 @@ function isAdjacentTo(transform: Transform, prevRanges: readonly number[]) {
   return adjacent
 }
 
-function rangesFor(maps: readonly StepMap[]) {
-  let result: number[] = []
+function rangesFor(maps: readonly StepMap[]): number[] {
+  let result = []
   for (let i = maps.length - 1; i >= 0 && result.length == 0; i--)
     maps[i].forEach((_from, _to, from, to) => result.push(from, to))
   return result
 }
 
-function mapRanges(ranges: readonly number[], mapping: Mapping) {
+function mapRanges(ranges: readonly number[], mapping: Mapping) : number[] | null{
   if (!ranges) return null
   let result = []
   for (let i = 0; i < ranges.length; i += 2) {
